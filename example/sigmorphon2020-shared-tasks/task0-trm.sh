@@ -1,6 +1,7 @@
 #!/bin/bash
-gpu=0
-data_dir=task0-data/processed
+#gpu=0
+#data_dir=task0-data/processed
+data_dir=task0-data/split-by-lemma
 ckpt_dir=checkpoints/sigmorphon20-task0
 
 lang=$1
@@ -22,7 +23,8 @@ embed_dim=256
 nb_heads=4
 dropout=${2:-0.3}
 
-CUDA_VISIBLE_DEVICES=$gpu python src/train.py \
+#CUDA_VISIBLE_DEVICES=$gpu 
+python src/train.py \
     --dataset sigmorphon17task1 \
     --train $data_dir/$lang.trn \
     --dev $data_dir/$lang.dev \
