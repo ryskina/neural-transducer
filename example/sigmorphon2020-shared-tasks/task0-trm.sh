@@ -1,11 +1,14 @@
 #!/bin/bash
 #gpu=0
-#data_dir=task0-data/processed
-data_dir=task0-data/split-by-lemma
-ckpt_dir=checkpoints/sigmorphon20-task0
 
 lang=$1
 arch=transformer
+
+split=$2
+encoding=$3
+
+data_dir=task0-data/split-by-$split/$encoding
+ckpt_dir=checkpoints/sigmorphon20-$split/$encoding
 
 lr=0.001
 scheduler=warmupinvsqr
@@ -21,7 +24,7 @@ layers=4
 hs=1024
 embed_dim=256
 nb_heads=4
-dropout=${2:-0.3}
+dropout=${4:-0.3}
 
 #CUDA_VISIBLE_DEVICES=$gpu 
 python src/train.py \
