@@ -1,10 +1,11 @@
 #!/bin/bash
-gpu=0
-data_dir=task0-data/processed
-ckpt_dir=checkpoints/sigmorphon20-task0
+#gpu=0
 
 lang=$1
 arch=transformer
+
+data_dir=task0-data/split-by-lemma/grapheme
+ckpt_dir=checkpoints/sigmorphon20-lemma/grapheme
 
 lr=0.001
 scheduler=warmupinvsqr
@@ -20,9 +21,10 @@ layers=4
 hs=1024
 embed_dim=256
 nb_heads=4
-dropout=${2:-0.3}
+dropout=${4:-0.3}
 
-CUDA_VISIBLE_DEVICES=$gpu python src/train.py \
+#CUDA_VISIBLE_DEVICES=$gpu 
+python src/train.py \
     --dataset sigmorphon17task1 \
     --train $data_dir/$lang.hall.trn \
     --dev $data_dir/$lang.dev \
