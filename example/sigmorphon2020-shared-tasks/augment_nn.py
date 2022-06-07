@@ -88,11 +88,14 @@ def levenshtein(candidate_tuple, lemma):
 
 def find_nearest_neighbor(lemma, candidates, similarity_function=levenshtein):
     if candidates:
-        top_input, top_output = sorted(candidates.items(), key=lambda x: similarity_function(x, lemma))[0]
+        sorted_candidates = sorted(candidates.items(), key=lambda x: similarity_function(x, lemma))
+        if sorted_candidates[0][0] == lemma:
+            return sorted(candidates.items(), key=lambda x: similarity_function(x, lemma))[1]
+        else:
+            return sorted(candidates.items(), key=lambda x: similarity_function(x, lemma))[0]
     else:
         # if this combination of tags has never appeared, COPY is our best guess
-        top_input = top_output = "".join(lemma)
-    return top_input, top_output
+        return "".join(lemma), "".join(lemma)
 
 def augment(inputs, outputs, tags, characters, mode):
     new_inputs = []
@@ -119,17 +122,6 @@ def augment(inputs, outputs, tags, characters, mode):
         # TODO: investigate spaces before lemma for some langs
         for k, item in enumerate(aligned):
             i, o = item[0], item[1]
-            i1 = [
-                c
-                for idx, c in enumerate(i)
-                if (c.strip() or (i[idx] == " " and o[idx] == " "))
-            ]
-            o1 = [
-                c
-                for idx, c in enumerate(o)
-                if (c.strip() or (i[idx] == " " and o[idx] == " "))
-            ]
-
             good_range = find_good_range(i, o)
             # print(good_range)
             if good_range:
@@ -140,29 +132,34 @@ def augment(inputs, outputs, tags, characters, mode):
                     if e - s > 5:  # arbitrary value
                         s += 1
                         e -= 1
-                    for j in range(s, e):
-                        if random() > 0.75:  # arbitrary value
-                            nc = choice(vocab)
-                            new_i[j] = nc
-                            new_o[j] = nc
+                    # if the hallucination is the same as the input, keep trying
+                    while "".join(new_i) == "".join(i):
+                        for j in range(s, e):
+                            if random() > 0.75:  # arbitrary value
+                                nc = choice(vocab)
+                                new_i[j] = nc
+                                new_o[j] = nc
+                # removing trailing whitespaces
+                new_i = "".join(new_i).strip()
+                new_o = "".join(new_o).strip()
                 new_i1 = [
                     c
                     for idx, c in enumerate(new_i)
-                    if (c.strip() or (new_o[idx] == " " and new_i[idx] == " "))
+                    if (c.strip() or (len(inputs[k]) > idx and inputs[k][idx] == " " and new_i[idx] == " "))
                 ]
                 new_o1 = [
                     c
                     for idx, c in enumerate(new_o)
-                    if (c.strip() or (new_i[idx] == " " and new_o[idx] == " "))
+                    if (c.strip() or (len(outputs[k]) > idx and outputs[k][idx] == " " and new_o[idx] == " "))
                 ]
             else:
                 # if unable to hallucinate, augment with nearest neighbor
-                new_i, new_o = find_nearest_neighbor("".join(i1), CELL_DICT[';'.join(tags[k])])
+                new_i, new_o = find_nearest_neighbor("".join(inputs[k]), CELL_DICT[';'.join(tags[k])])
                 new_i1 = list(new_i)
                 new_o1 = list(new_o)
 
-            new_inputs.append(i1 + ['&'] + new_i1 + ['#'] + new_o1)
-            new_outputs.append(o1)
+            new_inputs.append(inputs[k] + ['&'] + new_i1 + ['#'] + new_o1)
+            new_outputs.append(outputs[k])
             new_tags.append(tags[k])
 
     elif mode == "baseline1":
@@ -221,7 +218,7 @@ OUT_PATH = "/projects/tir4/users/mryskina/morphological-inflection/LemmaSplittin
 with codecs.open(f"{OUT_PATH}/{LANG}.trn.tsv", "w", "utf-8") as outp:
     for k in range(len(i)):
         outp.write(",".join(i[k] + ['$'] + t[k]) + "\t" + ",".join(o[k]) + "\n")
-        #TODO: allow adding hallucinations to CELL_DICT
+        #TODO: allow adding NEW hallucinations to CELL_DICT
 
 # augmenting the test file
 ii, oo, tt = augment(test_ins, test_outs, test_tags, vocab, mode=test_augment_mode)

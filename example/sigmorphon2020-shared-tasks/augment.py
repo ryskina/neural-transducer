@@ -5,11 +5,34 @@ import argparse
 import codecs
 import os
 import sys
-from random import choice, random
+from random import choice, random, seed
 from typing import Any, List
 
 sys.path.append("src")
 import align  # noqa: E402
+
+seed(42)
+
+# A function from LemmaSplitting to work with the provided data format
+# Borrowed from https://github.com/OnlpLab/LemmaSplitting/blob/master/lstm/utils.py
+def get_langs_and_paths(data_dir):
+    train_paths = {}
+    dev_paths = {}
+
+    for family in os.listdir(data_dir):
+        for filename in os.listdir(os.path.join(data_dir, family)):
+            lang, ext = os.path.splitext(filename)
+            if len(lang) != 3:
+                continue
+            filename = os.path.join(data_dir,family,filename)
+            if ext=='.trn':
+                train_paths[lang] = filename
+            elif ext=='.dev':
+                dev_paths[lang] = filename
+
+    langs = train_paths.keys()
+    files_paths = {k:(train_paths[k],dev_paths[k]) for k in langs}
+    return files_paths
 
 
 def read_data(filename):
@@ -85,15 +108,18 @@ def augment(inputs, outputs, tags, characters):
                         nc = choice(vocab)
                         new_i[j] = nc
                         new_o[j] = nc
+            # removing trailing whitespaces
+            new_i = "".join(new_i).strip()
+            new_o = "".join(new_o).strip()
             new_i1 = [
                 c
                 for idx, c in enumerate(new_i)
-                if (c.strip() or (new_o[idx] == " " and new_i[idx] == " "))
+                if (c.strip() or (len(inputs[k]) > idx and inputs[k][idx] == " " and new_i[idx] == " "))
             ]
             new_o1 = [
                 c
                 for idx, c in enumerate(new_o)
-                if (c.strip() or (new_i[idx] == " " and new_o[idx] == " "))
+                if (c.strip() or (len(outputs[k]) > idx and outputs[k][idx] == " " and new_o[idx] == " "))
             ]
             new_inputs.append(new_i1)
             new_outputs.append(new_o1)
@@ -128,20 +154,21 @@ parser.add_argument(
 args = parser.parse_args()
 
 DATA_PATH = args.datapath
-L2 = args.language
-LOW_PATH = os.path.join(DATA_PATH, L2 + ".trn")
-DEV_PATH = os.path.join(DATA_PATH, L2 + ".dev")
+LANG = args.language
+
+data_files_per_lang = get_langs_and_paths(DATA_PATH)
+TRN_PATH, DEV_PATH = data_files_per_lang[LANG]
 
 N = args.examples
 usedev = args.use_dev
 
-lowi, lowo, lowt = read_data(LOW_PATH)
+trni, trno, trnt = read_data(TRN_PATH)
 devi, devo, devt = read_data(DEV_PATH)
 
 if usedev:
-    vocab = get_chars(lowi + lowo + devi + devo)
+    vocab = get_chars(trni + trno + devi + devo)
 else:
-    vocab = get_chars(lowi + lowo)
+    vocab = get_chars(trni + trno)
 
 i: List[Any] = []
 o: List[Any] = []
@@ -149,10 +176,10 @@ t: List[Any] = []
 while len(i) < N:
     if usedev:
         # Do augmentation also using examples from dev
-        ii, oo, tt = augment(devi + lowi, devo + lowo, devt + lowt, vocab)
+        ii, oo, tt = augment(devi + trni, devo + trno, devt + trnt, vocab)
     else:
         # Just augment the training set
-        ii, oo, tt = augment(lowi, lowo, lowt, vocab)
+        ii, oo, tt = augment(trni, trno, trnt, vocab)
     ii = [c for c in ii if c]
     oo = [c for c in oo if c]
     tt = [c for c in tt if c]
@@ -167,6 +194,27 @@ i = [c for c in i if c]
 o = [c for c in o if c]
 t = [c for c in t if c]
 
-with codecs.open(os.path.join(DATA_PATH, L2 + ".hall"), "w", "utf-8") as outp:
+OUT_PATH = os.path.splitext(data_files_per_lang[LANG][0])[0]
+with codecs.open(OUT_PATH + ".hall", "w", "utf-8") as outp:
     for k in range(min(N, len(i))):
         outp.write("".join(i[k]) + "\t" + "".join(o[k]) + "\t" + ";".join(t[k]) + "\n")
+
+lemmas = []
+with codecs.open(OUT_PATH + ".hall.trn", "w", "utf-8") as outp:
+    with codecs.open(OUT_PATH + ".trn", "r", "utf-8") as inp:
+        for line in inp:
+            lemma, form, tags = line.strip().split('\t')
+            if lemma not in lemmas:
+                outp.write(f"{lemma}\t{lemma}\tCOPY\n")
+                lemmas.append(lemma)
+            outp.write(line)
+
+    with codecs.open(OUT_PATH + ".hall", "r", "utf-8") as inp:
+        for line in inp:
+            lemma, form, tags = line.strip().split('\t')
+            if lemma not in lemmas:
+                outp.write(f"{lemma}\t{lemma}\tCOPY\n")
+                lemmas.append(lemma)
+            outp.write(line)
+
+    outp.close()
