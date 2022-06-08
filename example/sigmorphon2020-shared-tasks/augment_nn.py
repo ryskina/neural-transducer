@@ -86,16 +86,26 @@ def find_good_range(a, b):
 def levenshtein(candidate_tuple, lemma):
     return editdistance.eval(candidate_tuple[0], "".join(lemma))
 
-def find_nearest_neighbor(lemma, candidates, similarity_function=levenshtein):
+def common_suffix(candidate_tuple, lemma):
+    # candidate_segments = candidate_tuple[0].split(" ")
+    # lemma_segments = lemma.split(" ")
+    # j = -1
+    # lcs_length = 0
+    # for j in range(-1, -min(len(candidate_segments), len(lemma_segments))-1, -1):
+    #     lcs_length += len(os.path.commonprefix([candidate_segments[j][::-1], lemma_segments[j][::-1]]))
+    lcs_length = len(os.path.commonprefix([candidate_tuple[0][::-1], lemma[::-1]]))
+    return -lcs_length
+
+def find_nearest_neighbors(lemma, candidates, distance_function=levenshtein, n=1):
     if candidates:
-        sorted_candidates = sorted(candidates.items(), key=lambda x: similarity_function(x, lemma))
-        if sorted_candidates[0][0] == lemma:
-            return sorted(candidates.items(), key=lambda x: similarity_function(x, lemma))[1]
+        sorted_candidates = sorted(candidates.items(), key=lambda x: distance_function(x, lemma))
+        if sorted_candidates[0][0] == lemma and len(sorted_candidates) > 1:
+            return sorted(candidates.items(), key=lambda x: distance_function(x, lemma))[1:n+1]
         else:
-            return sorted(candidates.items(), key=lambda x: similarity_function(x, lemma))[0]
+            return sorted(candidates.items(), key=lambda x: distance_function(x, lemma))[0:n]
     else:
         # if this combination of tags has never appeared, COPY is our best guess
-        return "".join(lemma), "".join(lemma)
+        return [("".join(lemma), "".join(lemma))]
 
 def augment(inputs, outputs, tags, characters, mode):
     new_inputs = []
@@ -154,7 +164,7 @@ def augment(inputs, outputs, tags, characters, mode):
                 ]
             else:
                 # if unable to hallucinate, augment with nearest neighbor
-                new_i, new_o = find_nearest_neighbor("".join(inputs[k]), CELL_DICT[';'.join(tags[k])])
+                new_i, new_o = find_nearest_neighbors("".join(inputs[k]), CELL_DICT[';'.join(tags[k])])[0]
                 new_i1 = list(new_i)
                 new_o1 = list(new_o)
 
@@ -165,7 +175,23 @@ def augment(inputs, outputs, tags, characters, mode):
     elif mode == "baseline1":
         # augment with nearest neighbor found in CELL_DICT for the right tag combo
         for i, o, t in zip(inputs, outputs, tags):
-            new_i, new_o = find_nearest_neighbor("".join(i), CELL_DICT[';'.join(t)])
+            new_i, new_o = find_nearest_neighbors("".join(i), CELL_DICT[';'.join(t)])[0]
+            new_inputs.append(i + ['&'] + list(new_i) + ['#'] + list(new_o))
+            new_outputs.append(o)
+            new_tags.append(t)
+
+    elif mode == "oracle1.5":
+        # augment with nearest neighbor found in CELL_DICT for the right tag combo
+        for i, o, t in zip(inputs, outputs, tags):
+            for new_i, new_o in find_nearest_neighbors("".join(i), CELL_DICT[';'.join(t)], n=10):
+                new_inputs.append(i + ['&'] + list(new_i) + ['#'] + list(new_o))
+                new_outputs.append(o)
+                new_tags.append(t)
+
+    elif mode == "baseline2":
+        for i, o, t in zip(inputs, outputs, tags):
+            new_i, new_o = find_nearest_neighbors("".join(i), CELL_DICT[';'.join(t)], 
+                distance_function=common_suffix)[0]
             new_inputs.append(i + ['&'] + list(new_i) + ['#'] + list(new_o))
             new_outputs.append(o)
             new_tags.append(t)
@@ -184,7 +210,7 @@ parser.add_argument("language", help="language", type=str)
 parser.add_argument(
     "--mode",
     help="type of oracle or baseline",
-    choices=["oracle0", "oracle1", "baseline1"],
+    choices=["oracle0", "oracle1", "baseline1", "oracle1.5", "baseline2"],
     type=str,
 )
 args = parser.parse_args()
@@ -203,7 +229,7 @@ CELL_DICT = defaultdict(dict)
 for lemma, form, tags in zip(train_ins, train_outs, train_tags):
     CELL_DICT[';'.join(tags)]["".join(lemma)] = "".join(form)
 
-train_augment_mode = "oracle1" if args.mode == "baseline1" else args.mode
+train_augment_mode = "oracle1" if args.mode in ["baseline1", "baseline2", "oracle1.5"] else args.mode
 test_augment_mode = args.mode
 
 # augmenting the training file
