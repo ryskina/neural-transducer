@@ -4,8 +4,8 @@
 lang=$1
 arch=transformer
 
-split=$2
-encoding=$3
+split=lemma
+encoding=grapheme
 
 data_dir=task0-data/split-by-$split/$encoding
 ckpt_dir=checkpoints/sigmorphon20-$split/$encoding
